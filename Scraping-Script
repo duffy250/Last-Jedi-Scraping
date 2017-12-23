@@ -1,0 +1,104 @@
+url <- "https://www.rottentomatoes.com/m/star_wars_the_last_jedi/reviews/?type=user"
+
+library(rvest)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(broom)
+
+LAST_JEDI_USER_REVIEWS <- as.character()
+
+url_content <- read_html(url)
+
+review_table <- html_nodes(url_content, ".review_table_row")
+
+row_count = 1
+
+row_number <- length(review_table)
+
+while(row_count <= row_number){
+  
+  review_table <- html_nodes(url_content, ".review_table_row")[row_count]
+  
+  LAST_JEDI_USER_REVIEWS <- append(LAST_JEDI_USER_REVIEWS, as.numeric(str_count(review_table, ".glyphicon-star")) + as.numeric(str_count(review_table, "½")*.5))
+  
+  row_count = row_count + 1
+  
+  }
+
+SUB_URL <- "https://www.rottentomatoes.com/m/star_wars_the_last_jedi/reviews/?page=2&type=user&sort="
+
+#scrape 10 pages
+PAGE_NUMBER = 2
+
+while(PAGE_NUMBER <= 10){
+  
+  URL_USE <- gsub("page=2", paste("page=", PAGE_NUMBER, sep = ""), SUB_URL)
+  
+  url_content <- read_html(URL_USE)
+  
+  review_table <- html_nodes(url_content, ".review_table_row")
+  
+  row_count = 1
+  
+  row_number <- length(review_table)
+  
+  while(row_count <= row_number){
+    
+    review_table <- html_nodes(url_content, ".review_table_row")[row_count]
+    
+    LAST_JEDI_USER_REVIEWS <- append(LAST_JEDI_USER_REVIEWS, as.numeric(str_count(review_table, ".glyphicon-star")) + as.numeric(str_count(review_table, "½")*.5))
+    
+    row_count = row_count + 1
+    
+  }
+ 
+  PAGE_NUMBER = PAGE_NUMBER + 1
+   
+}
+
+LAST_JEDI_USER_REVIEWS <- data.frame(LAST_JEDI_USER_REVIEWS)
+
+LAST_JEDI_USER_REVIEWS <- LAST_JEDI_USER_REVIEWS %>%
+  mutate(LAST_JEDI_USER_REVIEWS = as.numeric(as.character(LAST_JEDI_USER_REVIEWS)) * 2) %>%
+  filter(LAST_JEDI_USER_REVIEWS != 0) 
+
+RT_REVIEWS <- tidy(table(LAST_JEDI_USER_REVIEWS))
+
+RT_REVIEWS$VOTE_TOTAL <- sum(RT_REVIEWS$Freq)
+
+RT_REVIEWS <- mutate(RT_REVIEWS, PERCENT = Freq / VOTE_TOTAL, 
+                     SITE = as.factor("RT"), 
+                     LAST_JEDI_USER_REVIEWS = as.numeric(LAST_JEDI_USER_REVIEWS))
+
+#read in IMDB data
+IMDB_URL <- "http://www.imdb.com/title/tt2527336/ratings?ref_=tt_ov_rt"
+
+IMDB_PAGE <- read_html(IMDB_URL)
+
+IMDB_TABLE <- html_table(IMDB_PAGE)[1]
+
+IMDB_TABLE <- data.frame(IMDB_TABLE)
+
+colnames(IMDB_TABLE)[1] <- "LAST_JEDI_USER_REVIEWS"
+colnames(IMDB_TABLE)[3] <- "Freq"
+
+IMDB_TABLE <- IMDB_TABLE %>%
+  select(LAST_JEDI_USER_REVIEWS, Freq)
+
+IMDB_TABLE$Freq <- gsub(",", "", IMDB_TABLE$Freq)
+
+IMDB_TABLE <- IMDB_TABLE %>%
+  mutate(Freq = as.numeric(Freq))
+
+IMDB_TABLE$VOTE_TOTAL <- sum(IMDB_TABLE$Freq)
+
+IMDB_TABLE <- mutate(IMDB_TABLE, PERCENT = Freq / VOTE_TOTAL, 
+                     SITE = as.factor("IMDB"),
+                     LAST_JEDI_USER_REVIEWS = as.numeric(LAST_JEDI_USER_REVIEWS))
+
+LAST_JEDI_COMBINED_REVIEWS <- rbind(IMDB_TABLE, RT_REVIEWS)
+
+ggplot(LAST_JEDI_COMBINED_REVIEWS, aes(x = LAST_JEDI_USER_REVIEWS, y = PERCENT, fill = SITE)) + 
+  geom_histogram(alpha = .5, stat = "identity") + facet_grid(. ~ SITE)
+
